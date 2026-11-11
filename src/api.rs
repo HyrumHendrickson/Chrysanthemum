@@ -1,11 +1,11 @@
 //! HTTP and WebSocket routes.
 
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, Path, Query, State, WebSocketUpgrade, ws::Message},
+    extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State, WebSocketUpgrade, ws::Message},
     http::{HeaderValue, StatusCode, header},
     middleware,
     response::Response,
@@ -26,6 +26,7 @@ use crate::{
     error::{AppError, AppResult},
     guard::{Guard, guard},
     store::{Entry, EntryKind, ProjectInfo, ProjectSettings, Store, clean_rel_path, is_text},
+    toolchain::{CompilerId, JobStatus, ToolchainStatus},
 };
 
 const MAX_UPLOAD: usize = 100 * 1024 * 1024;
@@ -55,6 +56,12 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(health))
         .route("/share", get(share))
+        .route("/toolchain", get(toolchain_status))
+        .route(
+            "/toolchain/{id}",
+            post(toolchain_install).delete(toolchain_remove),
+        )
+        .route("/toolchain/cancel", post(toolchain_cancel))
         .route("/projects", get(list_projects).post(create_project))
         .route("/projects/{id}", delete(delete_project))
         .route(
@@ -112,12 +119,71 @@ async fn blocking<T: Send + 'static>(
 // ---------------------------------------------------------------------------
 
 async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
+    let resolved = st.compiler.toolchains().current();
     Json(json!({
-        "name": "scriptorium",
+        "name": "chrysanthemum",
         "version": env!("CARGO_PKG_VERSION"),
-        "toolchain": st.compiler.toolchain(),
-        "toolchain_ok": st.compiler.toolchain().any(),
+        "toolchain": resolved.toolchain,
+        "toolchain_ok": resolved.toolchain.any(),
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Compilers
+// ---------------------------------------------------------------------------
+
+/// The address of the connecting client, when the server knows it.
+type Peer = Option<Extension<ConnectInfo<SocketAddr>>>;
+
+/// Only the computer that runs the server may change which compilers are
+/// installed; collaborators on the network may look but not touch.
+fn is_local(peer: &Peer) -> bool {
+    peer.as_ref()
+        .is_none_or(|Extension(ConnectInfo(addr))| addr.ip().to_canonical().is_loopback())
+}
+
+fn require_local(peer: &Peer) -> AppResult<()> {
+    if is_local(peer) {
+        Ok(())
+    } else {
+        Err(AppError::forbidden(
+            "compilers can only be installed or removed from the computer running Chrysanthemum",
+        ))
+    }
+}
+
+async fn toolchain_status(State(st): State<AppState>, peer: Peer) -> Json<ToolchainStatus> {
+    Json(st.compiler.toolchains().status(is_local(&peer)))
+}
+
+async fn toolchain_install(
+    State(st): State<AppState>,
+    peer: Peer,
+    Path(id): Path<CompilerId>,
+) -> AppResult<(StatusCode, Json<JobStatus>)> {
+    require_local(&peer)?;
+    let status = st.compiler.toolchains().install(id)?;
+    Ok((StatusCode::ACCEPTED, Json(status)))
+}
+
+async fn toolchain_cancel(State(st): State<AppState>, peer: Peer) -> AppResult<StatusCode> {
+    require_local(&peer)?;
+    if st.compiler.toolchains().cancel() {
+        Ok(StatusCode::ACCEPTED)
+    } else {
+        Err(AppError::not_found("no installation is running"))
+    }
+}
+
+async fn toolchain_remove(
+    State(st): State<AppState>,
+    peer: Peer,
+    Path(id): Path<CompilerId>,
+) -> AppResult<StatusCode> {
+    require_local(&peer)?;
+    let toolchains = st.compiler.toolchains().clone();
+    blocking(move || toolchains.remove(id)).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn share(State(st): State<AppState>) -> Json<ShareInfo> {

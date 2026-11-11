@@ -2,7 +2,7 @@ const svg = (body: string) =>
   `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 
 export const icons = {
-  logo: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="4" y="3" width="16" height="2.4" rx="0.8"/><circle cx="7.5" cy="9" r="2.6"/><circle cx="16.5" cy="9" r="2.6"/><rect x="9.5" y="7" width="5" height="12"/><rect x="5" y="19" width="14" height="2.2" rx="0.8"/></svg>`,
+  logo: `<img class="logo-img" src="/logo.webp" alt="" draggable="false">`,
   back: svg(`<path d="M12 4l-6 6 6 6"/>`),
   chevron: svg(`<path d="M7 4l6 6-6 6"/>`),
   file: svg(`<path d="M5 2.5h6l4 4v11H5z"/><path d="M11 2.5v4h4"/>`),
@@ -28,4 +28,14 @@ export const icons = {
   close: svg(`<path d="M5 5l10 10M15 5L5 15"/>`),
   panel: svg(`<rect x="3" y="3.5" width="14" height="13" rx="1.5"/><path d="M3 12h14"/>`),
   broom: svg(`<path d="M12 3l5 5M10.5 6.5l3 3M3 17c0-3 2-5.5 5.500-7l3 3C10 16.5 7 18 3 17z"/>`),
+  undo: svg(`<path d="M7 5L3.5 8.5 7 12"/><path d="M4 8.5h7.5a4 4 0 010 8H8"/>`),
+  redo: svg(`<path d="M13 5l3.5 3.5L13 12"/><path d="M16 8.5H8.5a4 4 0 000 8H12"/>`),
+  link: svg(`<path d="M8.5 11.5a3 3 0 004.2 0l2.6-2.6a3 3 0 00-4.2-4.2l-.9.9"/><path d="M11.500 8.500a3 3 0 00-4.200 0L4.700 11.100a3 3 0 004.200 4.200l.9-.9"/>`),
+  listBullet: svg(`<path d="M8 5.500h9M8 10h9M8 14.500h9"/><circle cx="4" cy="5.500" r=".8" fill="currentColor"/><circle cx="4" cy="10" r=".8" fill="currentColor"/><circle cx="4" cy="14.500" r=".8" fill="currentColor"/>`),
+  listNumber: svg(`<path d="M9 5.500h8M9 10h8M9 14.500h8M3.500 4.500l1-.7v3.400M3.300 11.500h2.200l-2.200 2.700h2.300"/>`),
+  comment: svg(`<path d="M3.500 4.500h13v8.500H9.500L6 16.500V13H3.500z"/>`),
+  logs: svg(`<path d="M5 2.500h7l3 3v12H5z"/><path d="M8 9h5M8 12h5M8 15h3"/>`),
+  cog: svg(`<circle cx="10" cy="10" r="2.500"/><path d="M10 2.500v2M10 15.500v2M2.500 10h2M15.500 10h2M4.700 4.700l1.400 1.400M13.900 13.900l1.400 1.400M4.700 15.300l1.400-1.400M13.900 6.100l1.400-1.400"/>`),
+  search: svg(`<circle cx="9" cy="9" r="5.500"/><path d="M13 13l4 4"/>`),
+  chip: svg(`<rect x="5" y="5" width="10" height="10" rx="1.500"/><path d="M8 2.500v2.500M12 2.500v2.500M8 15v2.500M12 15v2.500M2.500 8h2.500M2.500 12h2.500M15 8h2.500M15 12h2.500"/>`),
 };

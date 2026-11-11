@@ -1,8 +1,8 @@
 //! On-disk project storage.
 //!
 //! Every project is a plain directory under the data root, so users can always
-//! reach their files with ordinary tools. Scriptorium keeps its own metadata and
-//! build output in a hidden `.scriptorium` subdirectory.
+//! reach their files with ordinary tools. Chrysanthemum keeps its own metadata and
+//! build output in a hidden `.chrysanthemum` subdirectory.
 
 use std::{
     fs,
@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
-pub const META_DIR: &str = ".scriptorium";
+pub const META_DIR: &str = ".chrysanthemum";
+/// Metadata directory name used before the project was renamed.
+const LEGACY_META_DIR: &str = ".scriptorium";
 const SETTINGS_FILE: &str = "project.json";
 pub const BUILD_DIR: &str = "build";
 const MAX_ID_LEN: usize = 64;
@@ -24,6 +26,8 @@ const DEFAULT_TEMPLATE: &str = r"\documentclass[11pt]{article}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+% Scalable T1 fonts, where this TeX installation provides them.
+\IfFileExists{lmodern.sty}{\usepackage{lmodern}}{}
 \usepackage{amsmath, amssymb}
 \usepackage{graphicx}
 \usepackage[hidelinks]{hyperref}
@@ -141,6 +145,22 @@ pub fn is_text(bytes: &[u8]) -> bool {
     !bytes.contains(&0) && std::str::from_utf8(bytes).is_ok()
 }
 
+/// Renames each project's old metadata directory so existing projects keep
+/// their settings and collaborative-editing state after the rename.
+fn migrate_legacy_meta(root: &Path) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let project = entry.path();
+        let old = project.join(LEGACY_META_DIR);
+        let new = project.join(META_DIR);
+        if old.is_dir() && !new.exists() {
+            let _ = fs::rename(&old, &new);
+        }
+    }
+}
+
 fn mtime_ms(meta: &fs::Metadata) -> u64 {
     meta.modified()
         .ok()
@@ -174,6 +194,7 @@ fn tempfile_in(dir: &Path) -> std::io::Result<(fs::File, PathBuf)> {
 impl Store {
     pub fn open(root: PathBuf) -> anyhow::Result<Self> {
         fs::create_dir_all(&root)?;
+        migrate_legacy_meta(&root);
         Ok(Self { root })
     }
 
@@ -493,7 +514,7 @@ mod tests {
         assert!(clean_rel_path("../a").is_err());
         assert!(clean_rel_path("/etc/passwd").is_err());
         assert!(clean_rel_path("a/../../b").is_err());
-        assert!(clean_rel_path(".scriptorium/project.json").is_err());
+        assert!(clean_rel_path(".chrysanthemum/project.json").is_err());
         assert!(clean_rel_path("a\\b").is_err());
         assert!(clean_rel_path("").is_err());
     }
@@ -533,5 +554,24 @@ mod tests {
         assert!(zip.starts_with(b"PK"));
         store.delete_project("demo").unwrap();
         assert!(store.list_projects().unwrap().is_empty());
+    }
+
+    #[test]
+    fn legacy_metadata_directory_is_migrated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("thesis").join(LEGACY_META_DIR);
+        fs::create_dir_all(&old).unwrap();
+        fs::write(
+            old.join(SETTINGS_FILE),
+            br#"{"main":"paper.tex","engine":"xelatex"}"#,
+        )
+        .unwrap();
+        fs::write(tmp.path().join("thesis/paper.tex"), b"x").unwrap();
+
+        let store = Store::open(tmp.path().to_path_buf()).unwrap();
+        assert!(!tmp.path().join("thesis").join(LEGACY_META_DIR).exists());
+        let settings = store.load_settings("thesis").unwrap();
+        assert_eq!(settings.main, "paper.tex");
+        assert_eq!(settings.engine, Engine::Xelatex);
     }
 }

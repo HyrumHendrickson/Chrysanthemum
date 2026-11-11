@@ -39,9 +39,9 @@ const themeCompartment = new Compartment();
 const editableCompartment = new Compartment();
 
 const lightHighlight = HighlightStyle.define([
-  { tag: t.keyword, color: "#2f5da8", fontWeight: "600" },
+  { tag: t.keyword, color: "#0b6b3a", fontWeight: "600" },
   { tag: [t.comment, t.lineComment], color: "#6a7a90", fontStyle: "italic" },
-  { tag: [t.string, t.special(t.string)], color: "#2b7a63" },
+  { tag: [t.string, t.special(t.string)], color: "#1f6f8b" },
   { tag: [t.number, t.atom, t.bool], color: "#8a4fa3" },
   { tag: [t.tagName, t.typeName, t.className], color: "#a8741a" },
   { tag: [t.bracket, t.punctuation, t.operator], color: "#5b6a82" },
@@ -61,12 +61,12 @@ function themeFor(mode: "light" | "dark"): Extension {
         color: "var(--muted)",
         borderRight: "1px solid var(--line)",
       },
-      ".cm-activeLine": { backgroundColor: dark ? "#ffffff0a" : "#2f5da80d" },
-      ".cm-activeLineGutter": { backgroundColor: dark ? "#ffffff0f" : "#2f5da814", color: "var(--text)" },
+      ".cm-activeLine": { backgroundColor: dark ? "#ffffff0a" : "#0988420d" },
+      ".cm-activeLineGutter": { backgroundColor: dark ? "#ffffff0f" : "#09884214", color: "var(--text)" },
       "&.cm-focused": { outline: "none" },
       ".cm-cursor": { borderLeftColor: "var(--accent)" },
       "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-        backgroundColor: dark ? "#6c9be644" : "#2f5da833",
+        backgroundColor: dark ? "#4fcf8644" : "#09884233",
       },
       ".cm-tooltip": {
         backgroundColor: "var(--surface)",
@@ -100,7 +100,98 @@ const wrap = (before: string, after: string) => (view: EditorView) => {
   return true;
 };
 
+
+export type EditorCommand =
+  | "bold" | "italic" | "underline" | "math" | "displaymath" | "link" | "comment"
+  | "itemize" | "enumerate"
+  | "normal" | "section" | "subsection" | "subsubsection" | "paragraph";
+
+const HEADING = /^(\s*)\\(?:section|subsection|subsubsection|paragraph|subparagraph)\*?\{(.*)\}\s*$/;
+
+function setHeading(view: EditorView, command: string | null) {
+  const { state } = view;
+  const line = state.doc.lineAt(state.selection.main.head);
+  const m = HEADING.exec(line.text);
+  const indent = m ? (m[1] ?? "") : (/^\s*/.exec(line.text)?.[0] ?? "");
+  const inner = m ? (m[2] ?? "") : line.text.trim();
+  const text = command ? `${indent}\\${command}{${inner}}` : `${indent}${inner}`;
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: text },
+    selection: EditorSelection.cursor(line.from + text.length),
+  });
+}
+
+function makeList(view: EditorView, env: "itemize" | "enumerate") {
+  const { state } = view;
+  const range = state.selection.main;
+  const first = state.doc.lineAt(range.from);
+  const last = state.doc.lineAt(range.to);
+  const items: string[] = [];
+  for (let n = first.number; n <= last.number; n++) {
+    const text = state.doc.line(n).text.trim();
+    if (text) items.push(`  \\item ${text}`);
+  }
+  const body = items.length ? items.join("\n") : "  \\item ";
+  const insert = `\\begin{${env}}\n${body}\n\\end{${env}}`;
+  view.dispatch({
+    changes: { from: first.from, to: last.to, insert },
+    selection: EditorSelection.cursor(first.from + insert.length - `\n\\end{${env}}`.length),
+  });
+}
+
+function toggleComment(view: EditorView) {
+  const { state } = view;
+  const range = state.selection.main;
+  const first = state.doc.lineAt(range.from).number;
+  const last = state.doc.lineAt(range.to).number;
+  const lines = [];
+  for (let n = first; n <= last; n++) lines.push(state.doc.line(n));
+  const filled = lines.filter((l) => l.text.trim() !== "");
+  const allCommented = filled.length > 0 && filled.every((l) => l.text.trimStart().startsWith("%"));
+  const changes = filled.map((l) => {
+    const indent = l.text.length - l.text.trimStart().length;
+    if (allCommented) {
+      const after = l.text.slice(indent + 1).startsWith(" ") ? 2 : 1;
+      return { from: l.from + indent, to: l.from + indent + after, insert: "" };
+    }
+    return { from: l.from + indent, insert: "% " };
+  });
+  view.dispatch({ changes });
+}
+
+function insertLink(view: EditorView) {
+  const { state } = view;
+  const range = state.selection.main;
+  const text = state.sliceDoc(range.from, range.to) || "text";
+  const insert = `\\href{https://}{${text}}`;
+  const urlStart = range.from + "\\href{".length;
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert },
+    selection: EditorSelection.range(urlStart, urlStart + "https://".length),
+  });
+}
+
+function runCommand(view: EditorView, command: EditorCommand) {
+  switch (command) {
+    case "bold": wrap("\\textbf{", "}")(view); break;
+    case "italic": wrap("\\textit{", "}")(view); break;
+    case "underline": wrap("\\underline{", "}")(view); break;
+    case "math": wrap("$", "$")(view); break;
+    case "displaymath": wrap("\\[ ", " \\]")(view); break;
+    case "link": insertLink(view); break;
+    case "comment": toggleComment(view); break;
+    case "itemize": makeList(view, "itemize"); break;
+    case "enumerate": makeList(view, "enumerate"); break;
+    case "normal": setHeading(view, null); break;
+    default: setHeading(view, command);
+  }
+  view.focus();
+}
+
 export interface EditorHandle {
+  exec(command: EditorCommand): void;
+  undo(): void;
+  redo(): void;
   view: EditorView;
   setTheme(mode: "light" | "dark"): void;
   /** Editing is disabled until the first sync with the server completes. */
@@ -152,6 +243,8 @@ export function createEditor(opts: {
           { key: "Mod-b", run: wrap("\\textbf{", "}") },
           { key: "Mod-i", run: wrap("\\textit{", "}") },
           { key: "Mod-Shift-m", run: wrap("$", "$") },
+          { key: "Mod-u", run: wrap("\\underline{", "}") },
+          { key: "Mod-/", run: (v) => (toggleComment(v), true) },
           ...closeBracketsKeymap,
           ...completionKeymap,
           ...searchKeymap,
@@ -175,6 +268,15 @@ export function createEditor(opts: {
 
   return {
     view,
+    exec: (command) => runCommand(view, command),
+    undo: () => {
+      undoManager.undo();
+      view.focus();
+    },
+    redo: () => {
+      undoManager.redo();
+      view.focus();
+    },
     setTheme(mode) {
       view.dispatch({ effects: themeCompartment.reconfigure(themeFor(mode)) });
     },

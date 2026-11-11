@@ -1,12 +1,12 @@
 //! Builds the web interface (web/dist) so it can be embedded in the binary.
 //!
 //! Requires Node.js (22.13 or newer) and npm when the interface has to be
-//! built. Set SCRIPTORIUM_SKIP_WEB_BUILD=1 to skip building, for example when
+//! built. Set CHRYSANTHEMUM_SKIP_WEB_BUILD=1 to skip building, for example when
 //! web/dist was produced by another step.
 
 use std::{fs, path::Path, process::Command, time::SystemTime};
 
-const FALLBACK_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Scriptorium</title>\
+const FALLBACK_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Chrysanthemum</title>\
 <body style=\"font:16px system-ui;max-width:40rem;margin:4rem auto;padding:0 1rem\">\
 <h1>Web interface not built</h1>\
 <p>This binary was compiled without the web interface. Install Node.js 22.13 or newer, \
@@ -46,10 +46,10 @@ fn main() {
     ] {
         println!("cargo:rerun-if-changed={p}");
     }
-    println!("cargo:rerun-if-env-changed=SCRIPTORIUM_SKIP_WEB_BUILD");
+    println!("cargo:rerun-if-env-changed=CHRYSANTHEMUM_SKIP_WEB_BUILD");
 
     let dist_index = Path::new("web/dist/index.html");
-    let skip = std::env::var_os("SCRIPTORIUM_SKIP_WEB_BUILD").is_some_and(|v| v != "0");
+    let skip = std::env::var_os("CHRYSANTHEMUM_SKIP_WEB_BUILD").is_some_and(|v| v != "0");
 
     if !skip {
         let built = newest_mtime(Path::new("web/dist/assets/app.js"));

@@ -47,7 +47,7 @@ jobs:
         working-directory: web
       - name: End-to-end collaboration test
         run: |
-          SCRIPTORIUM_SKIP_WEB_BUILD=1 cargo build
-          ./target/debug/scriptorium --data-dir "$RUNNER_TEMP/data" --port 3111 &
+          CHRYSANTHEMUM_SKIP_WEB_BUILD=1 cargo build
+          ./target/debug/chrysanthemum --data-dir "$RUNNER_TEMP/data" --port 3111 &
           sleep 3
-          cd web && SCRIPTORIUM_URL=http://127.0.0.1:3111 npm run test:e2e
+          cd web && CHRYSANTHEMUM_URL=http://127.0.0.1:3111 npm run test:e2e

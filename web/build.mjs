@@ -10,7 +10,8 @@ mkdirSync(`${out}/assets`, { recursive: true });
 mkdirSync(`${out}/pdfjs`, { recursive: true });
 
 copyFileSync("src/index.html", `${out}/index.html`);
-copyFileSync("src/favicon.svg", `${out}/favicon.svg`);
+copyFileSync("src/favicon.png", `${out}/favicon.png`);
+copyFileSync("src/logo.webp", `${out}/logo.webp`);
 copyFileSync("src/theme-init.js", `${out}/assets/theme-init.js`);
 // pdf.js runs its parser in a worker and loads decoders on demand.
 copyFileSync("node_modules/pdfjs-dist/build/pdf.worker.min.mjs", `${out}/assets/pdf.worker.mjs`);

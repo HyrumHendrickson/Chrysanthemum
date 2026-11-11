@@ -17,7 +17,7 @@ const PALETTE: [string, string][] = [
   ["#5b6a82", "#5b6a8233"],
 ];
 
-const KEY = "scriptorium.user";
+const KEY = "chrysanthemum.user";
 
 export function loadUser(): User {
   try {

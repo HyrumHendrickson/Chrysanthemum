@@ -1,30 +1,25 @@
-import { type Health, api } from "./api";
 import { Home } from "./home";
+import { toolchain } from "./toolchain";
 import { Workspace } from "./workspace";
 
 const app = document.getElementById("app") as HTMLElement;
 let view: { destroy?: () => void } | null = null;
-let health: Health | null = null;
 
 function route() {
   view?.destroy?.();
   view = null;
   const match = /^#\/p\/([^/]+)$/.exec(location.hash);
   if (match?.[1]) {
-    document.title = `${decodeURIComponent(match[1])} · Scriptorium`;
-    view = new Workspace(app, decodeURIComponent(match[1]), health);
+    document.title = `${decodeURIComponent(match[1])} · Chrysanthemum`;
+    view = new Workspace(app, decodeURIComponent(match[1]));
   } else {
-    document.title = "Scriptorium";
-    view = new Home(app, health);
+    document.title = "Chrysanthemum";
+    view = new Home(app);
   }
 }
 
 async function boot() {
-  try {
-    health = await api.health();
-  } catch {
-    health = null;
-  }
+  await toolchain.refresh();
   window.addEventListener("hashchange", route);
   route();
 }

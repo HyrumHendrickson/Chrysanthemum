@@ -15,8 +15,8 @@ export async function openShareDialog(projectId?: string) {
     body.append(h("h2", {}, "Work together"));
     if (!info.lan) {
       body.append(
-        h("p", {}, "Scriptorium is currently reachable only from this computer. To let others on your network edit with you, stop it and start it again with:"),
-        h("pre", { class: "codeblock" }, "scriptorium --lan"),
+        h("p", {}, "Chrysanthemum is currently reachable only from this computer. To let others on your network edit with you, stop it and start it again with:"),
+        h("pre", { class: "codeblock" }, "chrysanthemum --lan"),
         h("p", { class: "hint" }, "A one-time access token is generated for you and printed in the terminal together with the join links."),
       );
     } else {

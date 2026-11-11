@@ -10,7 +10,7 @@ use axum::{
 
 use crate::api::AppState;
 
-pub const COOKIE_NAME: &str = "scriptorium_token";
+pub const COOKIE_NAME: &str = "chrysanthemum_token";
 
 /// Security policy derived from the server configuration.
 #[derive(Debug, Clone)]
@@ -83,17 +83,17 @@ pub async fn guard(State(state): State<AppState>, req: Request, next: Next) -> R
 
 fn login_page() -> Response {
     const HTML: &str = r#"<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Scriptorium</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Chrysanthemum</title>
 <style>body{font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f3f5f8;color:#1b2a41}
 form{background:#fff;padding:2rem;border-radius:8px;box-shadow:0 1px 3px #0002;max-width:22rem;width:calc(100% - 2rem)}
 h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:0 0 1rem;color:#4a5a73}
 input{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #b8c2d1;border-radius:6px;font:inherit}
-button{margin-top:.75rem;width:100%;padding:.6rem;border:0;border-radius:6px;background:#2f5da8;color:#fff;font:inherit;cursor:pointer}
-button:focus-visible,input:focus-visible{outline:2px solid #2f5da8;outline-offset:2px}</style></head>
+button{margin-top:.75rem;width:100%;padding:.6rem;border:0;border-radius:6px;background:#098842;color:#fff;font:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid #098842;outline-offset:2px}</style></head>
 <body><form method="get" action="/"><h1>Access token required</h1>
-<p>Enter the token shown in the terminal where Scriptorium is running, or open the join link it printed.</p>
+<p>Enter the token shown in the terminal where Chrysanthemum is running, or open the join link it printed.</p>
 <input name="token" type="password" autocomplete="off" autofocus required aria-label="Access token">
-<button type="submit">Open Scriptorium</button></form></body></html>"#;
+<button type="submit">Open Chrysanthemum</button></form></body></html>"#;
     Response::builder()
         .status(StatusCode::UNAUTHORIZED)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")

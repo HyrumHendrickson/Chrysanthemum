@@ -1,15 +1,16 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Context;
-use clap::Parser;
-use scriptorium::{
+use chrysanthemum::{
     api::{AppState, ShareInfo, router},
     collab::Collab,
-    compile::{CompileManager, Toolchain},
+    compile::CompileManager,
     config::{Cli, Config},
     guard::Guard,
     store::Store,
+    toolchain::{Toolchain, ToolchainManager},
 };
+use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -17,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("scriptorium=info,tower_http=warn")),
+                .unwrap_or_else(|_| EnvFilter::new("chrysanthemum=info,tower_http=warn")),
         )
         .with_target(false)
         .init();
@@ -25,16 +26,13 @@ async fn main() -> anyhow::Result<()> {
     let cfg = Cli::parse().resolve()?;
     let store = Store::open(cfg.data_dir.clone())
         .with_context(|| format!("cannot open data directory {}", cfg.data_dir.display()))?;
-    let toolchain = Toolchain::detect();
+    let toolchains = ToolchainManager::new(&cfg.data_dir);
+    let toolchain = toolchains.current().toolchain.clone();
     let share = Arc::new(share_info(&cfg));
     let state = AppState {
         store: store.clone(),
         collab: Collab::new(store.clone()),
-        compiler: Arc::new(CompileManager::new(
-            store,
-            toolchain.clone(),
-            cfg.compile_timeout,
-        )),
+        compiler: Arc::new(CompileManager::new(store, toolchains, cfg.compile_timeout)),
         guard: Arc::new(Guard {
             token: cfg.token.clone(),
             loopback_only: cfg.bind.ip().is_loopback(),
@@ -56,9 +54,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let collab = state.collab.clone();
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        router(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     collab.flush_all().await;
     tracing::info!("stopped; all documents saved");
     Ok(())
@@ -96,7 +97,7 @@ fn share_info(cfg: &Config) -> ShareInfo {
 }
 
 fn print_banner(cfg: &Config, tc: &Toolchain, share: &ShareInfo, port: u16) {
-    println!("Scriptorium {}", env!("CARGO_PKG_VERSION"));
+    println!("Chrysanthemum {}", env!("CARGO_PKG_VERSION"));
     println!("  projects:  {}", cfg.data_dir.display());
     println!("  local:     {}", local_url(cfg, port));
     if share.lan {
@@ -129,9 +130,7 @@ fn print_banner(cfg: &Config, tc: &Toolchain, share: &ShareInfo, port: u16) {
     if tc.any() {
         println!("  tex:       {}", engines.join(", "));
     } else {
-        println!(
-            "  tex:       none found; install TeX Live, MiKTeX or Tectonic to compile documents"
-        );
+        println!("  tex:       none found; open the Compilers menu in the browser to install one");
     }
     println!();
 }

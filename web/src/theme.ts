@@ -9,7 +9,7 @@ export const theme = {
   set(mode: Mode) {
     document.documentElement.dataset.theme = mode;
     try {
-      localStorage.setItem("scriptorium.theme", mode);
+      localStorage.setItem("chrysanthemum.theme", mode);
     } catch {
       /* preference lasts for this session only */
     }

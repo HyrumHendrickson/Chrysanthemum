@@ -7,15 +7,16 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use futures_util::{SinkExt, StreamExt};
-use http_body_util::BodyExt;
-use scriptorium::{
+use chrysanthemum::{
     api::{AppState, ShareInfo, router},
     collab::Collab,
-    compile::{CompileManager, Toolchain},
+    compile::CompileManager,
     guard::Guard,
     store::Store,
+    toolchain::ToolchainManager,
 };
+use futures_util::{SinkExt, StreamExt};
+use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use yrs::{
@@ -37,7 +38,7 @@ fn harness(token: Option<&str>) -> Harness {
         collab: Collab::new(store.clone()),
         compiler: Arc::new(CompileManager::new(
             store,
-            Toolchain::detect(),
+            ToolchainManager::new(tmp.path()),
             Duration::from_secs(60),
         )),
         guard: Arc::new(Guard {
@@ -215,7 +216,7 @@ async fn path_traversal_is_rejected() {
         "../x",
         "/etc/passwd",
         "a/../../b",
-        ".scriptorium/project.json",
+        ".chrysanthemum/project.json",
     ] {
         let uri = format!("/api/projects/p/raw?path={}", bad.replace('/', "%2F"));
         let (s, _) = send(&h.app, req(Method::GET, &uri, None)).await;
@@ -270,13 +271,15 @@ async fn token_authentication() {
     assert_eq!(send(&h.app, r).await.0, StatusCode::OK);
 
     let mut r = req(Method::GET, "/api/projects", None);
-    r.headers_mut()
-        .insert(header::COOKIE, "scriptorium_token=s3cret".parse().unwrap());
+    r.headers_mut().insert(
+        header::COOKIE,
+        "chrysanthemum_token=s3cret".parse().unwrap(),
+    );
     assert_eq!(send(&h.app, r).await.0, StatusCode::OK);
 
     let mut r = req(Method::GET, "/api/projects", None);
     r.headers_mut()
-        .insert(header::COOKIE, "scriptorium_token=wrong".parse().unwrap());
+        .insert(header::COOKIE, "chrysanthemum_token=wrong".parse().unwrap());
     assert_eq!(send(&h.app, r).await.0, StatusCode::UNAUTHORIZED);
 
     // A browser visit with ?token= sets the cookie and redirects to a clean URL.
@@ -292,13 +295,16 @@ async fn token_authentication() {
         resp.headers()[header::SET_COOKIE]
             .to_str()
             .unwrap()
-            .contains("scriptorium_token=s3cret")
+            .contains("chrysanthemum_token=s3cret")
     );
 }
 
 fn tex_available() -> bool {
-    let tc = Toolchain::detect();
-    tc.pdflatex
+    let tmp = tempfile::tempdir().unwrap();
+    ToolchainManager::new(tmp.path())
+        .current()
+        .toolchain
+        .pdflatex
 }
 
 #[tokio::test]
@@ -505,4 +511,78 @@ async fn two_clients_edit_the_same_document() {
         h.state.store.read_file("pair", "main.tex").unwrap(),
         b"hello, world"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Compilers
+// ---------------------------------------------------------------------------
+
+fn from_peer(mut r: Request<Body>, addr: &str) -> Request<Body> {
+    r.extensions_mut().insert(axum::extract::ConnectInfo(
+        addr.parse::<std::net::SocketAddr>().unwrap(),
+    ));
+    r
+}
+
+#[tokio::test]
+async fn lists_installable_compilers() {
+    let h = harness(None);
+    let (s, body) = send(&h.app, req(Method::GET, "/api/toolchain", None)).await;
+    assert_eq!(s, StatusCode::OK);
+    let v = json_of(&body);
+    assert_eq!(v["can_manage"], true);
+    let ids: Vec<&str> = v["compilers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["texlive", "tectonic"]);
+    assert!(v["active"].get("pdflatex").is_some());
+
+    let (_, health) = send(&h.app, req(Method::GET, "/api/health", None)).await;
+    assert_eq!(json_of(&health)["toolchain"], v["active"]);
+}
+
+#[tokio::test]
+async fn only_the_local_computer_may_change_compilers() {
+    let h = harness(None);
+    let remote = "192.168.1.50:5000";
+    let (s, body) = send(
+        &h.app,
+        from_peer(req(Method::GET, "/api/toolchain", None), remote),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(json_of(&body)["can_manage"], false);
+
+    for (method, uri) in [
+        (Method::POST, "/api/toolchain/tectonic"),
+        (Method::DELETE, "/api/toolchain/tectonic"),
+        (Method::POST, "/api/toolchain/cancel"),
+    ] {
+        let (s, _) = send(&h.app, from_peer(req(method, uri, None), remote)).await;
+        assert_eq!(s, StatusCode::FORBIDDEN, "{uri}");
+    }
+
+    // The same requests from the loopback address are not refused for that reason.
+    let local = "127.0.0.1:5000";
+    let (s, _) = send(
+        &h.app,
+        from_peer(req(Method::DELETE, "/api/toolchain/tectonic", None), local),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND, "nothing is installed to remove");
+    let (s, _) = send(
+        &h.app,
+        from_peer(req(Method::POST, "/api/toolchain/cancel", None), local),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND, "nothing is running to cancel");
+    let (s, _) = send(
+        &h.app,
+        from_peer(req(Method::POST, "/api/toolchain/nonsense", None), local),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
 }

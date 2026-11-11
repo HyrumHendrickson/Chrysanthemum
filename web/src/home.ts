@@ -1,57 +1,49 @@
-import { type Health, type ProjectInfo, api } from "./api";
-import { clear, confirmAction, h, relativeTime, toast } from "./dom";
+import { type ProjectInfo, type ToolchainStatus, api } from "./api";
+import { openCompilersDialog } from "./compilers";
+import { clear, confirmAction, h, promptText, relativeTime, toast } from "./dom";
 import { icons } from "./icons";
 import { openShareDialog } from "./share";
 import { theme } from "./theme";
+import { toolchain } from "./toolchain";
 
 export class Home {
-  private list = h("ul", { class: "project-list" });
+  private rows = h("ul", { class: "project-rows" });
+  private compilerBox = h("div", { class: "side-compilers" });
+  private banner = h("div");
   private projects: ProjectInfo[] = [];
+  private query = "";
+  private unsubscribe: () => void;
 
-  constructor(
-    private readonly root: HTMLElement,
-    private readonly health: Health | null,
-  ) {
+  constructor(private readonly root: HTMLElement) {
     this.render();
+    this.unsubscribe = toolchain.subscribe((s) => this.paintCompilers(s));
+    void toolchain.refresh();
     void this.refresh();
   }
 
   destroy() {
-    /* nothing to release */
+    this.unsubscribe();
+  }
+
+  private async createProject() {
+    const name = await promptText({
+      title: "New project",
+      label: "Project name",
+      value: "",
+      confirm: "Create",
+      hint: "Letters, digits, '-' and '_' only. Each project is a folder on this computer.",
+    });
+    if (!name) return;
+    try {
+      const info = await api.createProject(name);
+      location.hash = `#/p/${encodeURIComponent(info.id)}`;
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
   }
 
   private render() {
-    const input = h("input", {
-      type: "text",
-      name: "name",
-      placeholder: "thesis-2026",
-      autocomplete: "off",
-      spellcheck: "false",
-      maxlength: "64",
-      pattern: "[A-Za-z0-9_][A-Za-z0-9_\\-]*",
-      title: "Letters, digits, '-' and '_'",
-      "aria-label": "New project name",
-      required: true,
-    });
-    const form = h(
-      "form",
-      {
-        class: "new-project",
-        onsubmit: async (e: Event) => {
-          e.preventDefault();
-          try {
-            const info = await api.createProject(input.value.trim());
-            location.hash = `#/p/${encodeURIComponent(info.id)}`;
-          } catch (err) {
-            toast((err as Error).message, "error");
-          }
-        },
-      },
-      input,
-      h("button", { class: "btn primary", type: "submit" }, "Create project"),
-    );
-
-    const themeBtn = h("button", { class: "icon-btn", type: "button", "aria-label": "Toggle colour theme" });
+    const themeBtn = h("button", { class: "icon-btn", type: "button", "aria-label": "Toggle colour theme", title: "Toggle colour theme" });
     const paintTheme = () => (themeBtn.innerHTML = theme.get() === "dark" ? icons.sun : icons.moon);
     paintTheme();
     themeBtn.addEventListener("click", () => {
@@ -59,14 +51,11 @@ export class Home {
       paintTheme();
     });
 
-    const warning =
-      this.health && !this.health.toolchain_ok
-        ? h(
-            "div",
-            { class: "banner warn", role: "alert" },
-            "No TeX installation was found on this computer. You can write and collaborate, but compiling needs TeX Live, MiKTeX or Tectonic. Install one, then restart Scriptorium.",
-          )
-        : null;
+    const search = h("input", { type: "search", class: "search", placeholder: "Search projects", "aria-label": "Search projects", autocomplete: "off" });
+    search.addEventListener("input", () => {
+      this.query = search.value.trim().toLowerCase();
+      this.paintRows();
+    });
 
     clear(this.root);
     this.root.append(
@@ -75,41 +64,87 @@ export class Home {
         { class: "home" },
         h(
           "header",
-          { class: "home-bar" },
-          h("a", { class: "wordmark", href: "#/" }, h("span", { html: icons.logo }), "Scriptorium"),
-          h(
-            "div",
-            { class: "bar-actions" },
-            h("button", { class: "btn", type: "button", onclick: () => void openShareDialog() }, h("span", { html: icons.share }), "Work together"),
-            themeBtn,
-          ),
+          { class: "topbar" },
+          h("a", { class: "wordmark", href: "#/" }, h("span", { class: "brand-mark", html: icons.logo }), "Chrysanthemum"),
+          h("div", { class: "spacer" }),
+          h("button", { class: "btn", type: "button", onclick: () => void openCompilersDialog() }, h("span", { html: icons.chip }), "Compilers"),
+          h("button", { class: "btn", type: "button", onclick: () => void openShareDialog() }, h("span", { html: icons.share }), "Work together"),
+          themeBtn,
         ),
         h(
-          "main",
-          { class: "home-main" },
-          h("h1", {}, "Projects"),
-          h("p", { class: "lede" }, "Documents live in plain folders on this computer. Compiling and collaboration both run locally."),
-          warning,
-          form,
-          this.list,
+          "div",
+          { class: "home-body" },
+          h(
+            "aside",
+            { class: "home-side" },
+            h("button", { class: "btn primary block", type: "button", onclick: () => void this.createProject() }, h("span", { html: icons.plus }), "New Project"),
+            h("nav", { class: "side-nav", "aria-label": "Projects" }, h("a", { class: "side-link active", href: "#/", "aria-current": "page" }, "All projects")),
+            h("div", { class: "spacer" }),
+            this.compilerBox,
+          ),
+          h(
+            "main",
+            { class: "home-main" },
+            h("div", { class: "home-title" }, h("h1", {}, "All Projects"), search),
+            this.banner,
+            h(
+              "div",
+              { class: "project-table" },
+              h("div", { class: "project-head" }, h("span", {}, "Title"), h("span", {}, "Last modified"), h("span", { class: "actions-col" }, "Actions")),
+              this.rows,
+            ),
+          ),
         ),
       ),
     );
   }
 
-  private async refresh() {
-    try {
-      this.projects = await api.projects();
-    } catch (e) {
-      toast((e as Error).message, "error");
-      return;
+  private paintCompilers(s: ToolchainStatus) {
+    const names = s.compilers.filter((c) => c.installed).map((c) => c.name);
+    const engines = Object.entries(s.active)
+      .filter(([k, v]) => v && k !== "latexmk")
+      .map(([k]) => k);
+    clear(this.compilerBox);
+    this.compilerBox.append(
+      h("div", { class: "side-label" }, "Compiler"),
+      engines.length
+        ? h("div", { class: "side-status ok" }, h("span", { html: icons.check }), names.length ? names.join(", ") : "Found on this computer")
+        : h("div", { class: "side-status none" }, "None installed"),
+      h("button", { class: "btn small block", type: "button", onclick: () => void openCompilersDialog() }, engines.length ? "Manage compilers" : "Install a compiler"),
+    );
+    clear(this.banner);
+    if (engines.length === 0) {
+      this.banner.append(
+        h(
+          "div",
+          { class: "banner warn", role: "alert" },
+          h("div", {}, h("strong", {}, "No LaTeX compiler yet. "), "You can write and collaborate, but turning documents into PDFs needs one. Chrysanthemum can install it for you."),
+          h("button", { class: "btn primary", type: "button", onclick: () => void openCompilersDialog() }, "Install a compiler"),
+        ),
+      );
     }
-    clear(this.list);
+  }
+
+  private paintRows() {
+    clear(this.rows);
+    const shown = this.projects.filter((p) => p.id.toLowerCase().includes(this.query));
     if (this.projects.length === 0) {
-      this.list.append(h("li", { class: "empty-row" }, "No projects yet. Name one above to start writing."));
+      this.rows.append(
+        h(
+          "li",
+          { class: "empty-row" },
+          h("span", { class: "empty-logo", html: icons.logo }),
+          h("p", {}, "No projects yet."),
+          h("button", { class: "btn primary", type: "button", onclick: () => void this.createProject() }, "Create your first project"),
+        ),
+      );
       return;
     }
-    for (const p of this.projects) {
+    if (shown.length === 0) {
+      this.rows.append(h("li", { class: "empty-row" }, h("p", {}, "No projects match your search.")));
+      return;
+    }
+    for (const p of shown) {
       const del = h("button", { class: "icon-btn danger", type: "button", "aria-label": `Delete ${p.id}`, title: "Delete project", html: icons.trash });
       del.addEventListener("click", async () => {
         const ok = await confirmAction({
@@ -126,14 +161,30 @@ export class Home {
           toast((e as Error).message, "error");
         }
       });
-      this.list.append(
+      this.rows.append(
         h(
           "li",
           { class: "project-row" },
-          h("a", { class: "project-link", href: `#/p/${encodeURIComponent(p.id)}` }, h("span", { class: "project-title" }, p.id), h("span", { class: "project-meta" }, `Edited ${relativeTime(p.modified)}`)),
-          del,
+          h("a", { class: "project-title", href: `#/p/${encodeURIComponent(p.id)}` }, p.id),
+          h("span", { class: "project-meta" }, relativeTime(p.modified)),
+          h(
+            "span",
+            { class: "row-tools" },
+            h("a", { class: "icon-btn", href: api.zipUrl(p.id), download: "", title: "Download source (.zip)", "aria-label": `Download ${p.id}`, html: icons.download }),
+            del,
+          ),
         ),
       );
     }
+  }
+
+  private async refresh() {
+    try {
+      this.projects = await api.projects();
+    } catch (e) {
+      toast((e as Error).message, "error");
+      return;
+    }
+    this.paintRows();
   }
 }

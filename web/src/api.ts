@@ -48,6 +48,40 @@ export interface Health {
   toolchain_ok: boolean;
 }
 
+export type CompilerId = "texlive" | "tectonic";
+export type Phase = "downloading" | "verifying" | "unpacking" | "testing" | "done" | "failed" | "cancelled";
+
+export interface JobStatus {
+  id: CompilerId;
+  phase: Phase;
+  downloaded: number;
+  total: number;
+  error: string | null;
+}
+
+export interface CompilerInfo {
+  id: CompilerId;
+  name: string;
+  version: string;
+  summary: string;
+  notes: string;
+  engines: string[];
+  available: boolean;
+  installed: boolean;
+  recommended: boolean;
+  download_bytes: number | null;
+  installed_bytes: number | null;
+}
+
+export interface ToolchainStatus {
+  platform: string | null;
+  can_manage: boolean;
+  compilers: CompilerInfo[];
+  active: Toolchain;
+  system: Toolchain;
+  job: JobStatus | null;
+}
+
 export interface ShareInfo {
   lan: boolean;
   urls: string[];
@@ -75,7 +109,7 @@ async function request<T>(method: string, url: string, body?: unknown, raw?: Bod
   try {
     res = await fetch(url, init);
   } catch {
-    throw new ApiError("Cannot reach the Scriptorium server. Is it still running?", 0);
+    throw new ApiError("Cannot reach the Chrysanthemum server. Is it still running?", 0);
   }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -98,6 +132,10 @@ const q = (path: string) => `path=${encodeURIComponent(path)}`;
 export const api = {
   health: () => request<Health>("GET", "/api/health"),
   share: () => request<ShareInfo>("GET", "/api/share"),
+  toolchain: () => request<ToolchainStatus>("GET", "/api/toolchain"),
+  installCompiler: (id: CompilerId) => request<JobStatus>("POST", `/api/toolchain/${id}`),
+  removeCompiler: (id: CompilerId) => request<void>("DELETE", `/api/toolchain/${id}`),
+  cancelInstall: () => request<void>("POST", "/api/toolchain/cancel"),
   projects: () => request<ProjectInfo[]>("GET", "/api/projects"),
   createProject: (name: string) => request<ProjectInfo>("POST", "/api/projects", { name }),
   deleteProject: (id: string) => request<void>("DELETE", p(id)),

@@ -1,12 +1,12 @@
 [package]
-name = "scriptorium"
-version = "0.1.0"
+name = "chrysanthemum"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A local-first, collaborative LaTeX editor with live PDF preview"
 license = "MIT"
 readme = "README.md"
-keywords = ["latex", "editor", "collaboration", "crdt"]
+keywords = ["latex", "editor", "collaboration", "pdf", "crdt"]
 categories = ["command-line-utilities", "text-editors"]
 publish = false
 
@@ -15,8 +15,10 @@ anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws", "macros"] }
 bytes = "1.12.1"
 clap = { version = "4.6.7", features = ["derive", "env"] }
+flate2 = "1.1.11"
 futures-util = "0.3.34"
 libc = "0.2.191"
+liblzma = { version = "0.4.9", features = ["static"] }
 local-ip-address = "0.6.13"
 mime_guess = "2.0.5"
 rand = "0.8"
@@ -25,12 +27,14 @@ rust-embed = "8.13.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
+tar = { version = "0.4.46", default-features = false }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"] }
 tower = "0.5.3"
 tower-http = { version = "0.7.1", features = ["trace", "compression-gzip", "set-header"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+ureq = { version = "3.5.1", default-features = false, features = ["rustls", "platform-verifier"] }
 webbrowser = "1.2.6"
 which = "8.0.6"
 yrs = "0.23"

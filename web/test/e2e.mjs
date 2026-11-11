@@ -1,5 +1,5 @@
 // End-to-end check of the browser-side collaboration provider against a running
-// Scriptorium server. Usage: SCRIPTORIUM_URL=http://127.0.0.1:3000 node test/e2e.mjs
+// Chrysanthemum server. Usage: CHRYSANTHEMUM_URL=http://127.0.0.1:3000 node test/e2e.mjs
 //
 // It drives the real DocProvider (the same code the UI uses) with two clients
 // and verifies sync, presence, persistence and clean reconnection.
@@ -11,13 +11,13 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 
-const base = process.env.SCRIPTORIUM_URL ?? "http://127.0.0.1:3000";
-const token = process.env.SCRIPTORIUM_TOKEN;
+const base = process.env.CHRYSANTHEMUM_URL ?? "http://127.0.0.1:3000";
+const token = process.env.CHRYSANTHEMUM_TOKEN;
 const wsBase = base.replace(/^http/, "ws");
 const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
 // Bundle the provider for Node, with the few browser globals it touches.
-const dir = mkdtempSync(join(tmpdir(), "scriptorium-e2e-"));
+const dir = mkdtempSync(join(tmpdir(), "chrysanthemum-e2e-"));
 const outfile = join(dir, "provider.mjs");
 await build({
   entryPoints: ["src/provider.ts"],

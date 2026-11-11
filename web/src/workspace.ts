@@ -5,17 +5,18 @@ import {
   type Diagnostic,
   type Engine,
   type Entry,
-  type Health,
   type Settings,
   api,
 } from "./api";
+import { installCard, openCompilersDialog } from "./compilers";
 import { DocProvider, type ConnectionStatus } from "./provider";
 import { clear, confirmAction, debounce, h, promptText, toast } from "./dom";
-import { type EditorHandle, createEditor } from "./editor";
+import { type EditorCommand, type EditorHandle, createEditor } from "./editor";
 import { icons } from "./icons";
 import { PdfViewer } from "./pdf";
 import { openShareDialog } from "./share";
 import { theme } from "./theme";
+import { toolchain } from "./toolchain";
 import { type User, initials, loadUser, saveUser } from "./user";
 
 const TEXT_EXT = new Set([
@@ -66,7 +67,7 @@ export class Workspace {
   private selectedDir = "";
   private bibKeys: string[] = [];
 
-  private autoCompile = localStorage.getItem("scriptorium.auto") !== "off";
+  private autoCompile = localStorage.getItem("chrysanthemum.auto") !== "off";
   private compiling = false;
   private pending = false;
   private lastApplied = 0;
@@ -80,6 +81,8 @@ export class Workspace {
   private engineSelect!: HTMLSelectElement;
   private autoToggle!: HTMLInputElement;
   private unsubscribeTheme: () => void;
+  private unsubscribeToolchain: () => void = () => {};
+  private hadEngine = toolchain.hasEngine();
   private readonly scheduleAuto = debounce(() => {
     if (this.autoCompile) void this.compile();
   }, 1800);
@@ -87,7 +90,6 @@ export class Workspace {
   constructor(
     private readonly root: HTMLElement,
     private readonly id: string,
-    private readonly health: Health | null,
   ) {
     this.build();
     this.pdf = new PdfViewer(this.el.pdfScroll as HTMLElement, {
@@ -99,6 +101,7 @@ export class Workspace {
       },
     });
     this.unsubscribeTheme = theme.subscribe((m) => this.editor?.setTheme(m));
+    this.unsubscribeToolchain = toolchain.subscribe(() => this.onToolchain());
     document.addEventListener("keydown", this.onKeydown);
     void this.init();
   }
@@ -108,6 +111,7 @@ export class Workspace {
     this.scheduleAuto.cancel();
     document.removeEventListener("keydown", this.onKeydown);
     this.unsubscribeTheme();
+    this.unsubscribeToolchain();
     window.clearTimeout(this.eventsTimer);
     this.events?.close();
     this.closeEditor();
@@ -126,6 +130,7 @@ export class Workspace {
       location.hash = "#/";
       return;
     }
+    await this.ensureEngine(false);
     this.renderTree();
     this.syncSettingsUi();
     this.connectEvents();
@@ -135,7 +140,7 @@ export class Workspace {
     try {
       const last = await api.lastCompile(this.id);
       if (last) await this.applyResult(last);
-      else void this.compile();
+      else if (toolchain.hasEngine()) void this.compile();
     } catch {
       /* the first compile will surface any problem */
     }
@@ -148,25 +153,18 @@ export class Workspace {
       e[name] = node;
       return node;
     };
+    const iconButton = (title: string, html: string, onclick: () => void, extra = "") =>
+      h("button", { class: `tool ${extra}`.trim(), type: "button", title, "aria-label": title, html, onclick });
 
-    this.engineSelect = h("select", { class: "select", "aria-label": "TeX engine" });
-    const engines: [Engine, string][] = [
-      ["pdflatex", "pdfLaTeX"],
-      ["xelatex", "XeLaTeX"],
-      ["lualatex", "LuaLaTeX"],
-      ["tectonic", "Tectonic"],
-    ];
-    for (const [value, label] of engines) {
-      const installed = this.health?.toolchain[value] ?? true;
-      this.engineSelect.append(h("option", { value, disabled: !installed }, installed ? label : `${label} (not installed)`));
-    }
+    this.engineSelect = h("select", { class: "select", "aria-label": "TeX engine", title: "TeX engine" });
+    this.renderEngineOptions();
     this.engineSelect.addEventListener("change", () => void this.saveSettings({ ...this.settings, engine: this.engineSelect.value as Engine }));
 
     this.autoToggle = h("input", { type: "checkbox", role: "switch" });
     this.autoToggle.checked = this.autoCompile;
     this.autoToggle.addEventListener("change", () => {
       this.autoCompile = this.autoToggle.checked;
-      localStorage.setItem("scriptorium.auto", this.autoCompile ? "on" : "off");
+      localStorage.setItem("chrysanthemum.auto", this.autoCompile ? "on" : "off");
     });
 
     const themeBtn = h("button", { class: "icon-btn", type: "button", "aria-label": "Toggle colour theme", title: "Toggle colour theme" });
@@ -186,7 +184,7 @@ export class Workspace {
     const downloadMenu = h(
       "details",
       { class: "menu" },
-      h("summary", { class: "btn", "aria-label": "Download" }, h("span", { html: icons.download }), "Download"),
+      h("summary", { class: "btn", "aria-label": "Download" }, h("span", { html: icons.download }), h("span", { class: "label" }, "Download")),
       h(
         "div",
         { class: "menu-pop" },
@@ -198,6 +196,7 @@ export class Workspace {
       if (!downloadMenu.contains(ev.target as Node)) downloadMenu.removeAttribute("open");
     });
 
+    // ---- file tree
     const tree = mk("tree", "div", { class: "tree", role: "tree", "aria-label": "Project files" });
     const filesPanel = mk(
       "files",
@@ -205,9 +204,11 @@ export class Workspace {
       { class: "files" },
       h(
         "div",
-        { class: "pane-bar" },
+        { class: "pane-bar files-bar" },
         h("span", { class: "pane-title" }, "Files"),
-        h("div", { class: "pane-actions" },
+        h(
+          "div",
+          { class: "pane-actions" },
           h("button", { class: "icon-btn", type: "button", title: "New file", "aria-label": "New file", html: icons.plus, onclick: () => void this.newEntry("file") }),
           h("button", { class: "icon-btn", type: "button", title: "New folder", "aria-label": "New folder", html: icons.newFolder, onclick: () => void this.newEntry("dir") }),
           h("button", { class: "icon-btn", type: "button", title: "Upload files", "aria-label": "Upload files", html: icons.upload, onclick: () => uploadInput.click() }),
@@ -221,24 +222,56 @@ export class Workspace {
     const presence = mk("presence", "div", { class: "presence", "aria-label": "People in this file" });
     const conn = mk("conn", "span", { class: "conn", role: "status" });
 
-    const compileBtn = mk("compileBtn", "button", { class: "btn primary", type: "button", title: "Compile (Ctrl+Enter)", onclick: () => void this.compile() });
-    compileBtn.innerHTML = `${icons.play}<span class="label">Recompile</span>`;
-
     const top = h(
       "header",
       { class: "topbar" },
-      h("a", { class: "icon-btn", href: "#/", "aria-label": "All projects", title: "All projects", html: icons.back }),
-      h("span", { class: "brand-mark", html: icons.logo }),
+      h("a", { class: "wordmark compact", href: "#/", title: "All projects", "aria-label": "All projects" }, h("span", { class: "brand-mark", html: icons.logo })),
+      h("span", { class: "crumb-sep", "aria-hidden": "true" }, "/"),
       h("h1", { class: "project-name", title: this.id }, this.id),
-      this.engineSelect,
+      conn,
       h("div", { class: "spacer" }),
       presence,
-      conn,
-      h("label", { class: "switch", title: "Compile automatically after you stop typing" }, this.autoToggle, h("span", {}, "Auto-compile")),
-      compileBtn,
-      downloadMenu,
+      h("button", { class: "btn", type: "button", title: "Install or remove LaTeX compilers", onclick: () => void openCompilersDialog() }, h("span", { html: icons.chip }), h("span", { class: "label" }, "Compilers")),
       h("button", { class: "btn", type: "button", onclick: () => void openShareDialog(this.id) }, h("span", { html: icons.share }), h("span", { class: "label" }, "Share")),
+      downloadMenu,
       themeBtn,
+    );
+
+    // ---- editor with a formatting toolbar
+    const style = h("select", { class: "select style-select", "aria-label": "Heading style", title: "Heading style" });
+    style.append(
+      h("option", { value: "", disabled: true, selected: true, hidden: true }, "Normal text"),
+      h("option", { value: "normal" }, "Normal text"),
+      h("option", { value: "section" }, "Section"),
+      h("option", { value: "subsection" }, "Subsection"),
+      h("option", { value: "subsubsection" }, "Subsubsection"),
+      h("option", { value: "paragraph" }, "Paragraph"),
+    );
+    style.addEventListener("change", () => {
+      if (style.value) this.editor?.exec(style.value as EditorCommand);
+      style.value = "";
+    });
+    const cmd = (c: EditorCommand) => () => this.editor?.exec(c);
+    const sep = () => h("span", { class: "tool-sep", "aria-hidden": "true" });
+    const toolbar = h(
+      "div",
+      { class: "editor-toolbar", role: "toolbar", "aria-label": "Formatting" },
+      iconButton("Undo", icons.undo, () => this.editor?.undo()),
+      iconButton("Redo", icons.redo, () => this.editor?.redo()),
+      sep(),
+      style,
+      sep(),
+      iconButton("Bold (Ctrl+B)", "<b>B</b>", cmd("bold"), "glyph"),
+      iconButton("Italic (Ctrl+I)", "<i>I</i>", cmd("italic"), "glyph"),
+      iconButton("Underline (Ctrl+U)", "<u>U</u>", cmd("underline"), "glyph"),
+      sep(),
+      iconButton("Inline math (Ctrl+Shift+M)", "<span>$x$</span>", cmd("math"), "glyph wide"),
+      iconButton("Display math", "<span>\\[ \\]</span>", cmd("displaymath"), "glyph wide"),
+      iconButton("Insert link", icons.link, cmd("link")),
+      sep(),
+      iconButton("Bulleted list", icons.listBullet, cmd("itemize")),
+      iconButton("Numbered list", icons.listNumber, cmd("enumerate")),
+      iconButton("Comment or uncomment lines (Ctrl+/)", icons.comment, cmd("comment")),
     );
 
     const editorHost = mk("editorHost", "div", { class: "editor-host" });
@@ -246,29 +279,41 @@ export class Workspace {
       "editorPane",
       "section",
       { class: "editor-pane", "aria-label": "Editor" },
-      h("div", { class: "pane-bar" }, mk("fileLabel", "span", { class: "pane-title" }), mk("notice", "span", { class: "notice", hidden: true })),
+      h("div", { class: "pane-bar tabbar" }, h("span", { class: "file-tab" }, h("span", { html: icons.file }), mk("fileLabel", "span", { class: "pane-title" })), mk("notice", "span", { class: "notice", hidden: true })),
+      toolbar,
       editorHost,
     );
 
+    // ---- PDF preview with its own toolbar
+    const compileBtn = mk("compileBtn", "button", { class: "btn primary recompile", type: "button", title: "Compile (Ctrl+Enter)", onclick: () => void this.compile() });
+    compileBtn.innerHTML = `${icons.play}<span class="label">Recompile</span>`;
+    const logsBtn = mk("logsBtn", "button", { class: "btn", type: "button", title: "Show compile errors and the raw log", onclick: () => this.toggleLog() });
+
     const pdfScroll = mk("pdfScroll", "div", { class: "pdf-scroll", tabindex: "0", "aria-label": "PDF preview" });
-    const empty = mk("pdfEmpty", "div", { class: "pdf-empty" }, "The preview appears here after the first successful compile.");
+    const empty = mk("pdfEmpty", "div", { class: "pdf-empty" });
     const previewPane = mk(
       "previewPane",
       "section",
       { class: "preview-pane", "aria-label": "Preview" },
       h(
         "div",
-        { class: "pane-bar" },
-        mk("status", "span", { class: "status", role: "status" }),
+        { class: "pane-bar pdf-toolbar" },
+        compileBtn,
+        this.engineSelect,
+        h("label", { class: "switch", title: "Compile automatically after you stop typing" }, this.autoToggle, h("span", {}, "Auto")),
         h("div", { class: "spacer" }),
-        mk("pageInfo", "span", { class: "page-info" }),
-        h("div", { class: "pane-actions" },
+        logsBtn,
+        h("a", { class: "icon-btn", href: api.pdfDownloadUrl(this.id), download: "", title: "Download PDF", "aria-label": "Download PDF", html: icons.download }),
+        h(
+          "div",
+          { class: "pane-actions" },
           h("button", { class: "icon-btn", type: "button", title: "Zoom out", "aria-label": "Zoom out", html: icons.zoomOut, onclick: () => this.pdf.zoomOut() }),
           mk("zoomLabel", "span", { class: "zoom-label" }, "Fit width"),
           h("button", { class: "icon-btn", type: "button", title: "Zoom in", "aria-label": "Zoom in", html: icons.zoomIn, onclick: () => this.pdf.zoomIn() }),
           h("button", { class: "icon-btn", type: "button", title: "Fit to width", "aria-label": "Fit to width", html: icons.fit, onclick: () => this.pdf.fitWidth() }),
         ),
       ),
+      h("div", { class: "pdf-subbar" }, mk("status", "span", { class: "status", role: "status" }), h("div", { class: "spacer" }), mk("pageInfo", "span", { class: "page-info" })),
       h("div", { class: "pdf-wrap" }, pdfScroll, empty),
     );
 
@@ -296,7 +341,7 @@ export class Workspace {
         h("div", { class: "tabs", role: "tablist" }, tabProblems, tabLog),
         h("div", { class: "spacer" }),
         h("button", { class: "btn small", type: "button", title: "Delete generated files", onclick: () => void this.clean() }, h("span", { html: icons.broom }), "Clean build"),
-        h("button", { class: "icon-btn", type: "button", "aria-label": "Show or hide output", title: "Show or hide output", html: icons.panel, onclick: () => this.toggleLog() }),
+        h("button", { class: "icon-btn", type: "button", "aria-label": "Hide output", title: "Hide output", html: icons.close, onclick: () => this.toggleLog() }),
       ),
       logBody,
     );
@@ -310,13 +355,67 @@ export class Workspace {
     this.updateLogVisibility();
     this.renderPresence();
     this.renderConn("connecting");
+    this.renderPdfEmpty();
+  }
+
+  // ---------------------------------------------------------------- compilers
+
+  private renderEngineOptions() {
+    const engines: [Engine, string][] = [
+      ["pdflatex", "pdfLaTeX"],
+      ["xelatex", "XeLaTeX"],
+      ["lualatex", "LuaLaTeX"],
+      ["tectonic", "Tectonic"],
+    ];
+    this.engineSelect.replaceChildren(
+      ...engines.map(([value, label]) => {
+        const installed = toolchain.supports(value);
+        return h("option", { value, disabled: !installed }, installed ? label : `${label} (not installed)`);
+      }),
+    );
+    this.engineSelect.value = this.settings.engine;
+  }
+
+  /** If the project's engine is not available but another is, switch to it. */
+  private async ensureEngine(compileAfter = true) {
+    if (!toolchain.status || toolchain.supports(this.settings.engine)) return;
+    const next = toolchain.firstSupported();
+    if (next) await this.saveSettings({ ...this.settings, engine: next }, compileAfter);
+  }
+
+  private onToolchain() {
+    if (!this.el) return;
+    this.renderEngineOptions();
+    const gained = !this.hadEngine && toolchain.hasEngine();
+    this.hadEngine = toolchain.hasEngine();
+    this.renderPdfEmpty();
+    if (gained) {
+      void this.ensureEngine(false).then(() => this.compile());
+    }
+  }
+
+  private renderPdfEmpty() {
+    const box = this.el?.pdfEmpty;
+    if (!box) return;
+    box.replaceChildren();
+    if (this.pdf && this.pdf.pageCount > 0) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    if (toolchain.status && !toolchain.hasEngine()) {
+      box.append(installCard(toolchain.status));
+      return;
+    }
+    const failed = this.result && !this.result.pdf;
+    box.append(h("p", { class: "empty-text" }, failed ? "No PDF was produced. Open Logs to see what went wrong." : "The preview appears here after the first successful compile."));
   }
 
   // ----------------------------------------------------------------- layout
 
   private layout = (() => {
     try {
-      const saved = JSON.parse(localStorage.getItem("scriptorium.layout") ?? "{}") as { files?: number; split?: number };
+      const saved = JSON.parse(localStorage.getItem("chrysanthemum.layout") ?? "{}") as { files?: number; split?: number };
       return { files: saved.files ?? 232, split: saved.split ?? 0.5 };
     } catch {
       return { files: 232, split: 0.5 };
@@ -326,7 +425,8 @@ export class Workspace {
   private applyLayout() {
     const panes = this.el.panes!;
     panes.style.setProperty("--files-w", `${this.layout.files}px`);
-    panes.style.setProperty("--split", String(this.layout.split));
+    panes.style.setProperty("--col-editor", `${this.layout.split}fr`);
+    panes.style.setProperty("--col-preview", `${1 - this.layout.split}fr`);
   }
 
   private initSplitters() {
@@ -344,7 +444,7 @@ export class Workspace {
         }
         this.applyLayout();
       };
-      const save = () => localStorage.setItem("scriptorium.layout", JSON.stringify(this.layout));
+      const save = () => localStorage.setItem("chrysanthemum.layout", JSON.stringify(this.layout));
       handle.addEventListener("pointerdown", (ev) => {
         ev.preventDefault();
         handle.setPointerCapture(ev.pointerId);
@@ -554,15 +654,15 @@ export class Workspace {
   // --------------------------------------------------------------- settings
 
   private syncSettingsUi() {
-    this.engineSelect.value = this.settings.engine;
+    this.renderEngineOptions();
   }
 
-  private async saveSettings(next: Settings) {
+  private async saveSettings(next: Settings, compileAfter = true) {
     try {
       this.settings = await api.saveSettings(this.id, next);
       this.syncSettingsUi();
       this.renderTree();
-      if (this.autoCompile) void this.compile();
+      if (compileAfter && this.autoCompile) void this.compile();
     } catch (e) {
       toast((e as Error).message, "error");
       this.syncSettingsUi();
@@ -721,6 +821,10 @@ export class Workspace {
       this.pending = true;
       return;
     }
+    if (!toolchain.hasEngine()) {
+      this.renderStatus(null, "No compiler installed");
+      return;
+    }
     this.compiling = true;
     this.renderStatus("compiling");
     this.el.compileBtn!.setAttribute("aria-busy", "true");
@@ -755,13 +859,13 @@ export class Workspace {
     }
     if (result.pdf) {
       try {
-        const shown = await this.pdf.load(api.pdfUrl(this.id, result.id));
-        this.el.pdfEmpty!.hidden = shown;
+        await this.pdf.load(api.pdfUrl(this.id, result.id));
+        this.renderPdfEmpty();
       } catch (e) {
         toast(`Could not display the PDF: ${(e as Error).message}`, "error");
       }
     } else {
-      this.el.pdfEmpty!.hidden = this.pdf.pageCount > 0;
+      this.renderPdfEmpty();
     }
   }
 
@@ -769,8 +873,8 @@ export class Workspace {
     try {
       await api.clean(this.id);
       this.pdf.clear();
-      this.el.pdfEmpty!.hidden = false;
       this.result = null;
+      this.renderPdfEmpty();
       this.renderStatus(null);
       this.renderLog();
       toast("Generated files removed");
@@ -839,6 +943,10 @@ export class Workspace {
     if (errors) problemsLabel.push(h("span", { class: "count bad" }, String(errors)));
     if (warnings) problemsLabel.push(h("span", { class: "count warn" }, String(warnings)));
     this.el.tabProblems!.replaceChildren(...problemsLabel);
+    const logLabel: (string | Node)[] = [h("span", { html: icons.logs }), h("span", { class: "label" }, "Logs")];
+    if (errors) logLabel.push(h("span", { class: "count bad" }, String(errors)));
+    else if (warnings) logLabel.push(h("span", { class: "count warn" }, String(warnings)));
+    this.el.logsBtn!.replaceChildren(...logLabel);
     this.el.tabProblems!.setAttribute("aria-selected", String(this.logTab === "problems"));
     this.el.tabLog!.setAttribute("aria-selected", String(this.logTab === "log"));
     this.el.tabProblems!.classList.toggle("active", this.logTab === "problems");
@@ -931,7 +1039,7 @@ export class Workspace {
         break;
       case "cleaned":
         this.pdf.clear();
-        this.el.pdfEmpty!.hidden = false;
+        this.renderPdfEmpty();
         break;
       case "resync":
         await this.refreshFiles();

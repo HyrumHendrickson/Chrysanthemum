@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Scriptorium.
+Thanks for helping improve Chrysanthemum.
 
 1. Install Rust (1.88 or newer), Node.js 22.13 or newer, and a TeX distribution
    (TeX Live with `latexmk` is recommended).

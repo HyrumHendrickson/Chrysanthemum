@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents and new contributors working on Scriptorium.
+Guidance for AI coding agents and new contributors working on Chrysanthemum.
 
 ## What this is
 
@@ -13,7 +13,8 @@ between browsers on the same network using Yjs (CRDT) over WebSockets.
 | Path | Purpose |
 | --- | --- |
 | `src/store.rs` | Project storage on disk, path validation, settings, ZIP export |
-| `src/compile.rs` | Engine detection, process supervision, TeX log parsing |
+| `src/toolchain.rs` | Compiler catalog (pinned URLs and digests), detection, install, remove |
+| `src/compile.rs` | Process supervision, TeX log parsing, automatic package fetching |
 | `src/collab.rs` | Yjs rooms, y-websocket protocol, presence, persistence |
 | `src/api.rs` | HTTP and WebSocket routes, security headers |
 | `src/guard.rs` | Host/origin checks and access-token authentication |
@@ -21,6 +22,7 @@ between browsers on the same network using Yjs (CRDT) over WebSockets.
 | `src/config.rs`, `src/main.rs` | CLI and startup |
 | `build.rs` | Builds `web/` into `web/dist` for embedding |
 | `web/src/` | TypeScript UI (no framework); bundled with esbuild |
+| `web/src/toolchain.ts`, `compilers.ts` | Live compiler status store and the Compilers dialog |
 | `tests/api.rs` | Integration tests (HTTP, compile, two-client sync) |
 | `web/test/e2e.mjs` | Runs the real browser provider against a live server |
 
@@ -34,7 +36,7 @@ cd web && npm ci && npm run typecheck && npm run build
 cd web && npm run watch     # rebuild UI on change (debug binaries read web/dist from disk)
 # end-to-end (server must be running on port 3111):
 cargo run -- --data-dir /tmp/sdata --port 3111 &
-cd web && SCRIPTORIUM_URL=http://127.0.0.1:3111 npm run test:e2e
+cd web && CHRYSANTHEMUM_URL=http://127.0.0.1:3111 npm run test:e2e
 ```
 
 ## Conventions
@@ -53,6 +55,11 @@ cd web && SCRIPTORIUM_URL=http://127.0.0.1:3111 npm run test:e2e
 - The UI must work under the CSP in `src/api.rs`: no inline scripts, no remote
   resources. Everything must run offline.
 - Add tests with behaviour changes. Compile tests must skip when TeX is absent.
+
+- Compiler downloads must stay pinned: to update a version, change the URL and the SHA-256 together in `toolchain::catalog()`. `catalog_is_well_formed` checks the shape; compute digests from the real files, never by hand.
+- Programs run by the compile step must be started through `Resolved::program` and `run_command`, so that managed compilers come first on `PATH`.
+- Anything that installs or removes compilers must call `require_local` in `api.rs`.
+- CSS: never use `fr` units inside `calc()`; set whole `fr` values from script (see `--col-editor`).
 
 ## Security model
 
