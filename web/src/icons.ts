@@ -1,0 +1,31 @@
+const svg = (body: string) =>
+  `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+
+export const icons = {
+  logo: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="4" y="3" width="16" height="2.4" rx="0.8"/><circle cx="7.5" cy="9" r="2.6"/><circle cx="16.5" cy="9" r="2.6"/><rect x="9.5" y="7" width="5" height="12"/><rect x="5" y="19" width="14" height="2.2" rx="0.8"/></svg>`,
+  back: svg(`<path d="M12 4l-6 6 6 6"/>`),
+  chevron: svg(`<path d="M7 4l6 6-6 6"/>`),
+  file: svg(`<path d="M5 2.5h6l4 4v11H5z"/><path d="M11 2.5v4h4"/>`),
+  folder: svg(`<path d="M2.5 5.5h5l1.5 2h8.5v8h-15z"/>`),
+  plus: svg(`<path d="M10 4v12M4 10h12"/>`),
+  newFolder: svg(`<path d="M2.5 5.5h5l1.5 2h8.5v8h-15z"/><path d="M10 9.5v4M8 11.5h4"/>`),
+  upload: svg(`<path d="M10 13V4M6.5 7.5L10 4l3.5 3.5M4 15.5h12"/>`),
+  trash: svg(`<path d="M4 6h12M8 6V4h4v2M6 6l.6 10h6.8L14 6"/>`),
+  pencil: svg(`<path d="M3.5 16.5l1-4L13.5 3.5l3 3-9 9z"/>`),
+  play: svg(`<path d="M6 4l10 6-10 6z" fill="currentColor"/>`),
+  download: svg(`<path d="M10 4v9M6.5 9.5L10 13l3.5-3.5M4 15.5h12"/>`),
+  share: svg(`<circle cx="5" cy="10" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="15" cy="15" r="2"/><path d="M6.8 9l6.4-3M6.8 11l6.4 3"/>`),
+  sun: svg(`<circle cx="10" cy="10" r="3.5"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.3 4.3l1.4 1.4M14.3 14.3l1.4 1.4M4.3 15.7l1.4-1.4M14.3 5.7l1.4-1.4"/>`),
+  moon: svg(`<path d="M16 11.5A6.5 6.5 0 018.5 4 6.5 6.5 0 1016 11.5z"/>`),
+  main: svg(`<path d="M10 2.5l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.8l5-.7z"/>`),
+  warn: svg(`<path d="M10 3l8 14H2z"/><path d="M10 8.5v4M10 14.5v.5"/>`),
+  error: svg(`<circle cx="10" cy="10" r="7.5"/><path d="M10 6v5M10 13.5v.5"/>`),
+  check: svg(`<path d="M4 10.5l4 4 8-9"/>`),
+  zoomIn: svg(`<circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4M9 6.5v5M6.5 9h5"/>`),
+  zoomOut: svg(`<circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4M6.5 9h5"/>`),
+  fit: svg(`<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/>`),
+  copy: svg(`<rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5a1.5 1.5 0 00-1.5-1.5H5A1.5 1.5 0 003.5 5v6.5A1.5 1.5 0 005 13h2"/>`),
+  close: svg(`<path d="M5 5l10 10M15 5L5 15"/>`),
+  panel: svg(`<rect x="3" y="3.5" width="14" height="13" rx="1.5"/><path d="M3 12h14"/>`),
+  broom: svg(`<path d="M12 3l5 5M10.5 6.5l3 3M3 17c0-3 2-5.5 5.500-7l3 3C10 16.5 7 18 3 17z"/>`),
+};
